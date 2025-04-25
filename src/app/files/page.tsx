@@ -1,19 +1,28 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, ChangeEvent } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Moon, Sun, List, Grid3X3, LayoutGrid } from 'lucide-react';
+import { Moon, Sun, Download, Clipboard, Trash2 } from 'lucide-react';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
+interface FileItem {
+  _id: string;
+  filename: string;
+  url: string;
+  public_id: string;
+  uploadedAt: string;
+}
+
 export default function FilesPage() {
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [allFiles, setAllFiles] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [viewType, setViewType] = useState('tiles');
-  const [activeTab, setActiveTab] = useState('all');
-  const [darkMode, setDarkMode] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [uploadedFiles, setUploadedFiles] = useState<FileItem[]>([]);
+  const [allFiles, setAllFiles] = useState<FileItem[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [viewType, setViewType] = useState<'list' | 'medium' | 'tiles'>('tiles');
+  const [activeTab, setActiveTab] = useState<'all' | 'image' | 'video' | 'audio' | 'document'>('all');
+  const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'name' | 'date'>('date');
 
   const filesPerPage = 6;
 
@@ -22,11 +31,12 @@ export default function FilesPage() {
     const storedTheme = localStorage.getItem('darkMode');
     if (storedTheme === 'true') setDarkMode(true);
   }, []);
+  
 
   const fetchFiles = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('http://localhost:5000/api/files');
+      const res = await axios.get<{ data: FileItem[] }>('http://localhost:5000/api/files');
       setAllFiles(res.data.data);
       setUploadedFiles(res.data.data);
     } catch (error) {
@@ -44,14 +54,14 @@ export default function FilesPage() {
     });
   };
 
-  const deleteFile = async (id) => {
+  const deleteFile = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this file?')) return;
     try {
       setLoading(true);
       await axios.delete(`http://localhost:5000/api/files/${id}`);
       setUploadedFiles((prev) => prev.filter((file) => file._id !== id));
       setAllFiles((prev) => prev.filter((file) => file._id !== id));
-      if (searchTerm) handleSearch({ target: { value: searchTerm } });
+      if (searchTerm) handleSearch({ target: { value: searchTerm } } as ChangeEvent<HTMLInputElement>);
     } catch (error) {
       alert('Failed to delete file.');
     } finally {
@@ -59,7 +69,8 @@ export default function FilesPage() {
     }
   };
 
-  const getFileType = (url) => {
+
+  const getFileType = (url: string): 'Image' | 'Video' | 'Audio' | 'Document' => {
     if (url.match(/\.(jpeg|jpg|png|gif|webp)$/i)) return 'Image';
     if (url.match(/\.(mp4|webm|ogg)$/i)) return 'Video';
     if (url.match(/\.(mp3|wav)$/i)) return 'Audio';
@@ -76,25 +87,25 @@ export default function FilesPage() {
   const currentFiles = filteredFiles.slice(indexOfFirst, indexOfLast);
   const totalPages = Math.ceil(filteredFiles.length / filesPerPage);
 
-  const handleTabChange = (type) => {
+  const handleTabChange = (type: typeof activeTab) => {
     setActiveTab(type);
     setCurrentPage(1);
   };
 
-  const handleSearch = (e) => {
-    const searchTerm = e.target.value.toLowerCase();
-    setSearchTerm(searchTerm);
-    if (!searchTerm) {
+  const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
+    const search = e.target.value.toLowerCase();
+    setSearchTerm(search);
+    if (!search) {
       setUploadedFiles(allFiles);
       return;
     }
 
     const filtered = allFiles.filter((file) => {
       return (
-        file.filename?.toLowerCase().includes(searchTerm) ||
-        getFileType(file.url).toLowerCase().includes(searchTerm) ||
-        file.public_id?.toLowerCase().includes(searchTerm) ||
-        new Date(file.uploadedAt).toLocaleString().toLowerCase().includes(searchTerm)
+        file.filename?.toLowerCase().includes(search) ||
+        getFileType(file.url).toLowerCase().includes(search) ||
+        file.public_id?.toLowerCase().includes(search) ||
+        new Date(file.uploadedAt).toLocaleString().toLowerCase().includes(search)
       );
     });
 
@@ -102,15 +113,28 @@ export default function FilesPage() {
     setCurrentPage(1);
   };
 
-  const renderFilePreview = (file, fileType) => {
-    const previewClass = viewType === 'list' ? 'w-12 h-12' : viewType === 'medium' ? 'w-24 h-24' : 'w-full h-48 object-cover';
+  const renderFilePreview = (file: FileItem, fileType: string) => {
+    const previewClass =
+      viewType === 'list'
+        ? 'w-12 h-12'
+        : viewType === 'medium'
+        ? 'w-24 h-24'
+        : 'w-full h-48 object-cover';
 
     if (fileType === 'Image') {
       return <img src={file.url} alt="preview" className={`${previewClass} rounded mb-2`} />;
     } else if (fileType === 'Video') {
-      return <video controls className={`${previewClass} rounded mb-2`}><source src={file.url} type="video/mp4" /></video>;
+      return (
+        <video controls className={`${previewClass} rounded mb-2`}>
+          <source src={file.url} type="video/mp4" />
+        </video>
+      );
     } else if (fileType === 'Audio') {
-      return <audio controls className="w-full mt-2 mb-2"><source src={file.url} type="audio/mpeg" /></audio>;
+      return (
+        <audio controls className="w-full mt-2 mb-2">
+          <source src={file.url} type="audio/mpeg" />
+        </audio>
+      );
     } else {
       return <div className="text-sm text-gray-700 dark:text-gray-200 mb-2">📄 Document File</div>;
     }
@@ -144,7 +168,7 @@ export default function FilesPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               key={type}
-              onClick={() => handleTabChange(type)}
+              onClick={() => handleTabChange(type as 'all' | 'image' | 'video' | 'audio' | 'document')}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 activeTab === type
                   ? 'bg-blue-700 text-white'
@@ -155,21 +179,40 @@ export default function FilesPage() {
             </motion.button>
           ))}
         </div>
+        <div className="mb-6 flex flex-wrap justify-between items-center gap-4">
+  {/* Sort By Dropdown */}
+  <div className="flex flex-col">
+    <label htmlFor="sortBy" className="text-sm font-medium mb-1 text-gray-800 dark:text-white">
+      Sort by
+    </label>
+    <select
+      id="sortBy"
+      value={sortBy}
+      onChange={(e) => setSortBy(e.target.value as 'name' | 'date')}
+      className="p-2 rounded-md border border-gray-300 bg-white shadow-sm text-gray-700 dark:bg-gray-800 dark:text-white dark:border-gray-600"
+    >
+      <option value="date">Date</option>
+      <option value="name">Name</option>
+    </select>
+  </div>
 
-        <div className="mb-6 flex justify-end items-center gap-2">
-          <label htmlFor="viewType" className="text-blue-700">View:</label>
-          <select
-            id="viewType"
-            value={viewType}
-            onChange={(e) => setViewType(e.target.value)}
-            className="p-2 bg-white border border-gray-300 rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600"
-          >
-            <option value="list">List</option>
-            <option value="medium">Medium</option>
-            <option value="tiles">Tiles</option>
-          </select>
-        </div>
-
+  {/* View Type Dropdown */}
+  <div className="flex flex-col">
+    <label htmlFor="viewType" className="text-sm font-medium mb-1 text-gray-800 dark:text-white">
+      View
+    </label>
+    <select
+      id="viewType"
+      value={viewType}
+      onChange={(e) => setViewType(e.target.value as 'list' | 'medium' | 'tiles')}
+      className="p-2 rounded-md border border-gray-300 bg-white shadow-sm text-gray-700 dark:bg-gray-800 dark:text-white dark:border-gray-600"
+    >
+      <option value="list">List</option>
+      <option value="medium">Medium</option>
+      <option value="tiles">Tiles</option>
+    </select>
+  </div>
+</div>
         {loading ? (
           <div className="flex justify-center py-20">
             <LoadingSpinner message="Loading files..." />
@@ -200,18 +243,61 @@ export default function FilesPage() {
                       {fileType}
                     </span>
                     {renderFilePreview(file, fileType)}
-                    <a href={file.url} target="_blank" rel="noreferrer" className="text-blue-600 dark:text-blue-300 text-sm font-medium break-words hover:underline block mt-2">
-                      {file.filename || file.url}
-                    </a>
+                    <div className="flex flex-col gap-3 mt-2">
+  {/* File URL with link */}
+  <a
+    href={file.url}
+    target="_blank"
+    rel="noreferrer"
+    className="text-blue-600 dark:text-blue-300 text-xs font-medium break-words hover:underline truncate"
+    style={{ maxWidth: '200px' }} // Ensures the URL is truncated if it's long
+  >
+    {file.filename || file.url}
+  </a>
+
+  {/* Action buttons */}
+  <div className="flex items-center gap-2">
+    {/* Copy URL button */}
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(file.url);
+        alert('File URL copied to clipboard!');
+      }}
+      className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center gap-1"
+    >
+      <Clipboard size={16} />
+      Copy URL
+    </button>
+
+    {/* Download button */}
+    <a
+      href={file.url}
+      target="_blank"
+      rel="noreferrer"
+      className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 flex items-center gap-1"
+    >
+      <Download size={16} />
+      Download
+    </a>
+
+    {/* Delete button */}
+    <button
+      onClick={() => deleteFile(file._id || file.public_id)}
+      className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 flex items-center gap-1"
+    >
+      <Trash2 size={16} />
+      Delete
+    </button>
+  </div>
+</div>
                     <p className="text-xs text-gray-500 dark:text-gray-300 mt-1">
                       Uploaded at: {new Date(file.uploadedAt).toLocaleString()}
                     </p>
-                    <button
-                      onClick={() => deleteFile(file._id || file.public_id)}
-                      className="mt-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
-                    >
-                      Delete
-                    </button>
+
+                    
+                    
+
+                    
                   </motion.div>
                 );
               })}

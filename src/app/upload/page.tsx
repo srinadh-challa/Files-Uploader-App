@@ -1,17 +1,20 @@
 'use client';
 import React, { useRef, useState, useEffect } from 'react';
 import axios from 'axios';
-import LoadingSpinner from './LoadingSpinner';
+import LoadingSpinner from '@/components/LoadingSpinner'; // Ensure you have this component (below)
 import { motion } from 'framer-motion';
+import { FileType } from '@/app/types/fileTypes';
 
 export default function FileUpload() {
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [visibleFiles, setVisibleFiles] = useState([]);
+  const [uploadedFiles, setUploadedFiles] = useState<FileType[]>([]);
+  const [visibleFiles, setVisibleFiles] = useState<FileType[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
   const [viewType, setViewType] = useState('tiles');
-  const fileInputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState<string[]>([]); // Track uploading files by ID
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchFiles = async () => {
     try {
@@ -33,12 +36,18 @@ export default function FileUpload() {
     }
   };
 
-  const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
+    await uploadFile(file);
+  };
 
+  const uploadFile = async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
+    const fileId = `${Date.now()}-${file.name}`; // Create a temporary unique ID for the file
+
+    setUploadingFiles((prev) => [...prev, fileId]); // Mark the file as uploading
 
     try {
       setLoading(true);
@@ -57,12 +66,24 @@ export default function FileUpload() {
       alert('Upload failed');
     } finally {
       setLoading(false);
+      setUploadingFiles((prev) => prev.filter((id) => id !== fileId)); // Remove the file from uploading list
     }
   };
 
-  const triggerFilePicker = () => fileInputRef.current.click();
+  const handleFileDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await uploadFile(file);
+  };
 
-  const filterFile = (file, type) => {
+  const triggerFilePicker = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const filterFile = (file: FileType, type: string) => {
     const url = file.url.toLowerCase();
     if (type === 'Images') return /\.(jpg|jpeg|png|webp|gif)$/.test(url);
     if (type === 'Videos') return /\.(mp4|webm|ogg)$/.test(url);
@@ -71,17 +92,36 @@ export default function FileUpload() {
     return true;
   };
 
-  const handleTabChange = (type) => {
+  const handleTabChange = (type: string) => {
     setActiveTab(type);
     setVisibleFiles(uploadedFiles.filter((file) => filterFile(file, type)));
   };
 
-  const renderPreview = (file) => {
+  const deleteFile = async (id: string) => {
+    try {
+      await axios.delete(`http://localhost:5000/api/files/${id}`);
+      const updated = uploadedFiles.filter((f) => f._id !== id);
+      setUploadedFiles(updated);
+      setVisibleFiles(updated.filter((file) => filterFile(file, activeTab)));
+    } catch (err) {
+      console.error('Failed to delete:', err);
+    }
+  };
+
+  const renderPreview = (file: FileType) => {
     const url = file.url.toLowerCase();
+    const isUploading = uploadingFiles.includes(file._id); // Check if the file is being uploaded
+
+    if (isUploading) {
+      return (
+        <div className="w-full h-48 flex justify-center items-center">
+          <LoadingSpinner />
+        </div>
+      );
+    }
+
     if (/\.(jpg|jpeg|png|gif|webp)$/.test(url)) {
-      return <img src={file.url} alt="preview" className={`${
-        viewType === 'list' ? 'w-10 h-10' : viewType === 'medium' ? 'w-20 h-20 object-cover' : 'w-full h-48 object-cover'
-      } rounded`} />;
+      return <img src={file.url} alt="preview" className={`${viewType === 'list' ? 'w-10 h-10' : viewType === 'medium' ? 'w-20 h-20 object-cover' : 'w-full h-48 object-cover'} rounded`} />;
     } else if (/\.(mp4|webm|ogg)$/.test(url)) {
       return <video src={file.url} controls className="w-full h-48 rounded" />;
     } else if (/\.(mp3|wav)$/.test(url)) {
@@ -102,7 +142,15 @@ export default function FileUpload() {
   }, [showFiles]);
 
   return (
-    <div className="max-w-3xl mx-auto p-6 bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 rounded-xl shadow-lg mt-10 dark:bg-gradient-to-r dark:from-gray-900 dark:via-gray-800 dark:to-gray-700">
+    <div
+      onDrop={handleFileDrop}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      className={`max-w-3xl mx-auto p-6 rounded-xl shadow-lg mt-10 transition-colors duration-300 ${dragOver ? 'bg-blue-100' : 'bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 dark:from-gray-900 dark:via-gray-800 dark:to-gray-700'}`}
+    >
       <h2 className="text-3xl font-extrabold mb-4 text-white">📁 Upload & View Files</h2>
 
       <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
@@ -115,10 +163,15 @@ export default function FileUpload() {
           {showFiles ? 'Hide Files' : 'View Uploaded Files'}
         </button>
         <div className="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-300 transform hover:scale-105">
-          uploaded {uploadedFiles.length} files
+        {loading ? 'Loading...' : uploadingFiles.length} files uploading
+        </div>
+        <div className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition duration-300 transform hover:scale-105">
+           uploaded {uploadedFiles.length} files
         </div>
       </div>
-
+      <div className="flex items-center mb-4">
+        <label className="text-white mr-2 ml-4">Drag & Drop to Upload</label>
+      </div>
       {showFiles && (
         <>
           <div className="sticky top-0 z-10 bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 dark:from-gray-900 dark:via-gray-800 dark:to-gray-700 p-4 rounded-lg shadow-lg flex justify-between items-center">
@@ -152,9 +205,9 @@ export default function FileUpload() {
                   </option>
                 ))}
               </select>
+
             </div>
           </div>
-
           {loading ? (
             <div className="p-10 flex justify-center">
               <LoadingSpinner message="Loading files..." />
@@ -165,7 +218,7 @@ export default function FileUpload() {
             }`}>
               {visibleFiles.map((file, index) => (
                 <motion.div
-                  key={index}
+                  key={file._id || index}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
@@ -173,6 +226,7 @@ export default function FileUpload() {
                 >
                   {renderPreview(file)}
                   <p className="text-sm text-gray-600 mt-2 truncate">{file.filename}</p>
+                  <button onClick={() => deleteFile(file._id)} className="text-red-600 text-xs mt-1 hover:underline">Delete</button>
                 </motion.div>
               ))}
             </div>
@@ -180,6 +234,7 @@ export default function FileUpload() {
             <p className="text-white">No files found in this category.</p>
           )}
         </>
+
       )}
     </div>
   );
